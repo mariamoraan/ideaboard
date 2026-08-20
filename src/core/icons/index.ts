@@ -1,0 +1,1 @@
+export { MousePointer2 as MousePointerIcon } from 'lucide-react';

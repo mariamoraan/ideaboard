@@ -1,9 +1,5 @@
 {
   "files": [],
-  "paths": {
-    "@core/*": ["src/core/*"],
-    "@features/*": ["src/features/*"]
-  },
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }

@@ -1,0 +1,33 @@
+.collaborator-cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    
+    &__pointer {
+        display: block;
+    }
+    &__label {
+        position: absolute;
+        top: 20px;
+        left: 16px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px 3px 3px;
+        border-radius: 999px;
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.12),
+            0 4px 12px rgba(0, 0, 0, 0.15);
+        white-space: nowrap;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0.01em;
+        color: #fff;
+        &__name {
+            padding-right: 2px;
+        }
+    }    
+}

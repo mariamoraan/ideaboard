@@ -1,5 +1,12 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@features/*": ["src/features/*"],
+      "@assets/*": ["src/assets/*"],
+      "@icons": ["src/core/icons/index.ts"]
+    },
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
