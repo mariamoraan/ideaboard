@@ -8,10 +8,21 @@ import {
     noteBounds,
     unionRects,
 } from "@features/whiteboard/domain/notes-geometry";
-import { COLORS } from "@core/styles/colors";
 
 const DRAG_TRAIL_MAX = 20;
+const CONTENT_TRAIL_MAX = 2;
+const TRAIL_TTL_MS = 2000;
+const DRAG_RELEASE_FADE_MS = 500;
 const DRAG_BASE_ALPHA = 0.8;
+const CONTENT_BASE_ALPHA = 0.8;
+
+const DRAG_RGB = { r: 242, g: 240, b: 232 };
+const CONTENT_RGB = { r: 198, g: 211, b: 192 };
+
+type TrailEntry = {
+    rect: Rect;
+    createdAt: number;
+};
 
 type ContentSnapshot = {
     visibleNotes: Note[];
@@ -49,64 +60,152 @@ const clearCanvasArea = (ctx: CanvasRenderingContext2D, rect: Rect) => {
     ctx.clearRect(snapped.x, snapped.y, snapped.width, snapped.height);
 };
 
-const paintContentDirty = (ctx: CanvasRenderingContext2D, rect: Rect) => {
-    paintDirtyRectangles(
-        ctx,
-        snapRectToPixels(rect),
-        COLORS.dirtyRectangles.content,
-    );
-};
+const getTrailAgeOpacity = (age: number, max: number) => 1 - age / max;
 
-const getDragTrailOpacity = (age: number) => 1 - age / DRAG_TRAIL_MAX;
+const getTrailTimeOpacity = (entry: TrailEntry, now: number) =>
+    Math.max(0, 1 - (now - entry.createdAt) / TRAIL_TTL_MS);
 
-const paintDragDirtyWithOpacity = (
+const getEntryOpacity = (entry: TrailEntry, age: number, max: number, now: number) =>
+    getTrailAgeOpacity(age, max) * getTrailTimeOpacity(entry, now);
+
+const paintTrailRect = (
     ctx: CanvasRenderingContext2D,
     rect: Rect,
     opacityFactor: number,
+    rgb: { r: number; g: number; b: number },
+    baseAlpha: number,
 ) => {
     if (opacityFactor <= 0) return;
 
     paintDirtyRectangles(
         ctx,
         snapRectToPixels(rect),
-        `rgba(242, 240, 232, ${DRAG_BASE_ALPHA * opacityFactor})`,
+        `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseAlpha * opacityFactor})`,
     );
 };
+
+const getTrailRects = (trail: TrailEntry[]) => trail.map((entry) => entry.rect);
 
 const unionAllRects = (rects: Rect[]): Rect | null => {
     if (rects.length === 0) return null;
     return rects.reduce((acc, rect) => unionRects(acc, rect));
 };
 
-const pushDragTrailFrame = (trail: Rect[], frame: Rect): Rect[] =>
-    [frame, ...trail].slice(0, DRAG_TRAIL_MAX);
+const pushTrailFrame = (
+    trail: TrailEntry[],
+    frame: Rect,
+    max: number,
+    now: number,
+): TrailEntry[] => [{ rect: frame, createdAt: now }, ...trail].slice(0, max);
 
-const clearDragTrailArea = (ctx: CanvasRenderingContext2D, trail: Rect[]) => {
-    const area = unionAllRects(trail);
-    if (area) clearCanvasArea(ctx, area);
-};
+const pruneExpiredTrail = (trail: TrailEntry[], now: number) =>
+    trail.filter((entry) => now - entry.createdAt < TRAIL_TTL_MS);
 
-const paintDragTrail = (ctx: CanvasRenderingContext2D, trail: Rect[]) => {
-    trail.forEach((rect, age) => {
-        paintDragDirtyWithOpacity(ctx, rect, getDragTrailOpacity(age));
+const paintTrail = (
+    ctx: CanvasRenderingContext2D,
+    trail: TrailEntry[],
+    max: number,
+    rgb: { r: number; g: number; b: number },
+    baseAlpha: number,
+    now: number,
+) => {
+    trail.forEach((entry, age) => {
+        paintTrailRect(
+            ctx,
+            entry.rect,
+            getEntryOpacity(entry, age, max, now),
+            rgb,
+            baseAlpha,
+        );
     });
 };
 
-const restoreContentOverlay = (
+const paintContentTrail = (
     ctx: CanvasRenderingContext2D,
-    prevContentPaintedRef: React.MutableRefObject<Rect | null>,
+    trail: TrailEntry[],
+    now: number,
 ) => {
-    if (!prevContentPaintedRef.current) return;
-
-    clearCanvasArea(ctx, prevContentPaintedRef.current);
-    paintContentDirty(ctx, prevContentPaintedRef.current);
+    paintTrail(ctx, trail, CONTENT_TRAIL_MAX, CONTENT_RGB, CONTENT_BASE_ALPHA, now);
 };
 
-const repaintContentOverlay = (
+const getDragReleaseOpacity = (releaseStartedAt: number | null, now: number) => {
+    if (releaseStartedAt === null) return 1;
+    return Math.max(0, 1 - (now - releaseStartedAt) / DRAG_RELEASE_FADE_MS);
+};
+
+const paintDragTrail = (
     ctx: CanvasRenderingContext2D,
+    trail: TrailEntry[],
+    now: number,
+    releaseOpacity = 1,
+) => {
+    trail.forEach((entry, age) => {
+        paintTrailRect(
+            ctx,
+            entry.rect,
+            getEntryOpacity(entry, age, DRAG_TRAIL_MAX, now) * releaseOpacity,
+            DRAG_RGB,
+            DRAG_BASE_ALPHA,
+        );
+    });
+};
+
+const hasActiveTrails = (
+    dragTrail: TrailEntry[],
+    contentTrail: TrailEntry[],
+    now: number,
+) =>
+    pruneExpiredTrail(dragTrail, now).length > 0 ||
+    pruneExpiredTrail(contentTrail, now).length > 0;
+
+const repaintAllTrails = (
+    ctx: CanvasRenderingContext2D,
+    prevDragTrailRef: React.MutableRefObject<TrailEntry[]>,
+    prevContentTrailRef: React.MutableRefObject<TrailEntry[]>,
+    lastPaintedAreaRef: React.MutableRefObject<Rect | null>,
+    dragReleaseStartedAtRef: React.MutableRefObject<number | null>,
+    now: number,
+) => {
+    if (lastPaintedAreaRef.current) {
+        clearCanvasArea(ctx, lastPaintedAreaRef.current);
+        lastPaintedAreaRef.current = null;
+    }
+
+    prevDragTrailRef.current = pruneExpiredTrail(prevDragTrailRef.current, now);
+    prevContentTrailRef.current = pruneExpiredTrail(
+        prevContentTrailRef.current,
+        now,
+    );
+
+    const dragReleaseOpacity = getDragReleaseOpacity(
+        dragReleaseStartedAtRef.current,
+        now,
+    );
+
+    if (dragReleaseOpacity <= 0) {
+        prevDragTrailRef.current = [];
+        dragReleaseStartedAtRef.current = null;
+    }
+
+    paintContentTrail(ctx, prevContentTrailRef.current, now);
+    paintDragTrail(
+        ctx,
+        prevDragTrailRef.current,
+        now,
+        dragReleaseOpacity,
+    );
+
+    lastPaintedAreaRef.current = unionAllRects([
+        ...getTrailRects(prevDragTrailRef.current),
+        ...getTrailRects(prevContentTrailRef.current),
+    ]);
+};
+
+const updateContentTrail = (
     prevSnapshot: ContentSnapshot,
     visibleNotes: Note[],
-    prevContentPaintedRef: React.MutableRefObject<Rect | null>,
+    prevContentTrailRef: React.MutableRefObject<TrailEntry[]>,
+    now: number,
 ) => {
     const contentDirty = dirtyFromVisibleChange(
         prevSnapshot.visibleNotes,
@@ -114,43 +213,12 @@ const repaintContentOverlay = (
     );
     if (!contentDirty) return;
 
-    if (prevContentPaintedRef.current) {
-        clearCanvasArea(ctx, prevContentPaintedRef.current);
-    }
-
-    paintContentDirty(ctx, contentDirty);
-    prevContentPaintedRef.current = contentDirty;
-};
-
-const clearGhostDragOverlay = (
-    ctx: CanvasRenderingContext2D,
-    prevDragTrailRef: React.MutableRefObject<Rect[]>,
-    prevContentPaintedRef: React.MutableRefObject<Rect | null>,
-) => {
-    const hadTrail = prevDragTrailRef.current.length > 0;
-
-    if (hadTrail) {
-        clearDragTrailArea(ctx, prevDragTrailRef.current);
-        restoreContentOverlay(ctx, prevContentPaintedRef);
-    }
-
-    prevDragTrailRef.current = [];
-};
-
-const repaintGhostDragOverlay = (
-    ctx: CanvasRenderingContext2D,
-    ghostNote: Note,
-    prevDragTrailRef: React.MutableRefObject<Rect[]>,
-    prevContentPaintedRef: React.MutableRefObject<Rect | null>,
-) => {
-    const prevTrail = prevDragTrailRef.current;
-
-    clearDragTrailArea(ctx, prevTrail);
-    restoreContentOverlay(ctx, prevContentPaintedRef);
-
-    const nextTrail = pushDragTrailFrame(prevTrail, noteBounds(ghostNote));
-    paintDragTrail(ctx, nextTrail);
-    prevDragTrailRef.current = nextTrail;
+    prevContentTrailRef.current = pushTrailFrame(
+        prevContentTrailRef.current,
+        contentDirty,
+        CONTENT_TRAIL_MAX,
+        now,
+    );
 };
 
 export const useDebugDirtyRectangles = ({
@@ -160,57 +228,122 @@ export const useDebugDirtyRectangles = ({
     ghostNote,
     notes,
 }: UseDebugDirtyRectanglesParams) => {
-    const prevDragTrailRef = useRef<Rect[]>([]);
+    const prevDragTrailRef = useRef<TrailEntry[]>([]);
+    const prevContentTrailRef = useRef<TrailEntry[]>([]);
     const prevContentSnapshotRef = useRef<ContentSnapshot | null>(null);
-    const prevContentPaintedRef = useRef<Rect | null>(null);
+    const lastPaintedAreaRef = useRef<Rect | null>(null);
+    const wasDraggingRef = useRef(false);
+    const dragReleaseStartedAtRef = useRef<number | null>(null);
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        let rafId = 0;
+        let cancelled = false;
+        let needsFullClear = false;
 
-        const ctx = setupCanvas(canvas, width, height);
-        if (!ctx) return;
-
-        const ghostNoteId = ghostNote?.id ?? null;
-        const visibleNotes = getVisibleNotes(notes, ghostNoteId);
-        const prevSnapshot = prevContentSnapshotRef.current;
-        const needsFullRepaint = hasCanvasSizeChanged(
-            prevSnapshot,
-            width,
-            height,
-        );
-
-        if (needsFullRepaint) {
-            ctx.clearRect(0, 0, width, height);
-            prevDragTrailRef.current = [];
-            prevContentPaintedRef.current = null;
-        }
-
-        if (prevSnapshot && !needsFullRepaint) {
-            repaintContentOverlay(
-                ctx,
+        const syncTrailsFromState = (now: number) => {
+            const ghostNoteId = ghostNote?.id ?? null;
+            const visibleNotes = getVisibleNotes(notes, ghostNoteId);
+            const prevSnapshot = prevContentSnapshotRef.current;
+            const needsFullRepaint = hasCanvasSizeChanged(
                 prevSnapshot,
-                visibleNotes,
-                prevContentPaintedRef,
+                width,
+                height,
             );
-        }
 
-        prevContentSnapshotRef.current = { visibleNotes, width, height };
+            if (needsFullRepaint) {
+                needsFullClear = true;
+                prevDragTrailRef.current = [];
+                prevContentTrailRef.current = [];
+                lastPaintedAreaRef.current = null;
+                dragReleaseStartedAtRef.current = null;
+                wasDraggingRef.current = false;
+            }
 
-        if (!ghostNote) {
-            clearGhostDragOverlay(
+            if (prevSnapshot && !needsFullRepaint) {
+                updateContentTrail(
+                    prevSnapshot,
+                    visibleNotes,
+                    prevContentTrailRef,
+                    now,
+                );
+            }
+
+            prevContentSnapshotRef.current = { visibleNotes, width, height };
+
+            if (ghostNote) {
+                if (!wasDraggingRef.current && prevDragTrailRef.current.length > 0) {
+                    prevDragTrailRef.current = [];
+                    dragReleaseStartedAtRef.current = null;
+                }
+
+                wasDraggingRef.current = true;
+                dragReleaseStartedAtRef.current = null;
+                prevDragTrailRef.current = pushTrailFrame(
+                    prevDragTrailRef.current,
+                    noteBounds(ghostNote),
+                    DRAG_TRAIL_MAX,
+                    now,
+                );
+            } else if (
+                wasDraggingRef.current &&
+                prevDragTrailRef.current.length > 0
+            ) {
+                dragReleaseStartedAtRef.current = now;
+                wasDraggingRef.current = false;
+            } else {
+                wasDraggingRef.current = false;
+            }
+        };
+
+        const repaint = (now: number) => {
+            if (cancelled) return false;
+
+            const canvas = canvasRef.current;
+            if (!canvas) return false;
+
+            const ctx = setupCanvas(canvas, width, height);
+            if (!ctx) return false;
+
+            if (needsFullClear) {
+                ctx.clearRect(0, 0, width, height);
+                needsFullClear = false;
+                lastPaintedAreaRef.current = null;
+            }
+
+            repaintAllTrails(
                 ctx,
                 prevDragTrailRef,
-                prevContentPaintedRef,
+                prevContentTrailRef,
+                lastPaintedAreaRef,
+                dragReleaseStartedAtRef,
+                now,
             );
-            return;
+
+            return (
+                hasActiveTrails(
+                    prevDragTrailRef.current,
+                    prevContentTrailRef.current,
+                    now,
+                ) || dragReleaseStartedAtRef.current !== null
+            );
+        };
+
+        const loop = (now: number) => {
+            const shouldContinue = repaint(now);
+            if (shouldContinue && !cancelled) {
+                rafId = requestAnimationFrame(loop);
+            }
+        };
+
+        syncTrailsFromState(performance.now());
+        const shouldContinue = repaint(performance.now());
+        if (shouldContinue) {
+            rafId = requestAnimationFrame(loop);
         }
 
-        repaintGhostDragOverlay(
-            ctx,
-            ghostNote,
-            prevDragTrailRef,
-            prevContentPaintedRef,
-        );
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(rafId);
+        };
     }, [canvasRef, width, height, ghostNote, notes]);
 };

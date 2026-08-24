@@ -23,7 +23,10 @@ export const CollaboratorCursor: React.FC<Props> = ({
             className="collaborator-cursor"
             style={{ transform: `translate(${x}px, ${y}px)` }}
         >
-            {isDragging ? <DraggingIcon className="collaborator-cursor__pointer" size={16} /> : <MousePointerIcon className="collaborator-cursor__pointer" size={16} />}
+            {isDragging 
+            ? <DraggingIcon className="collaborator-cursor__pointer" size={16} fill='#ffffff' /> 
+            : <MousePointerIcon className="collaborator-cursor__pointer" size={16} fill='#ffffff' />
+            }
             <div
                 className="collaborator-cursor__label"
                 style={{ backgroundColor: color }}
