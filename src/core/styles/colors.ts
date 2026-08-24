@@ -11,6 +11,6 @@ export const COLORS = {
     },
     dirtyRectangles: {
         drag: 'rgba(242, 240, 232, 0.8)',
-        content: 'rgba(198, 211, 192, 0.8)',
+        content: 'rgba(211, 228, 242, 0.8)',
     }
 }

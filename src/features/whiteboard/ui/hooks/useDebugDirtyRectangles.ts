@@ -17,7 +17,7 @@ const DRAG_BASE_ALPHA = 0.8;
 const CONTENT_BASE_ALPHA = 0.8;
 
 const DRAG_RGB = { r: 242, g: 240, b: 232 };
-const CONTENT_RGB = { r: 198, g: 211, b: 192 };
+const CONTENT_RGB = { r: 211, g: 228, b: 242 };
 
 type TrailEntry = {
     rect: Rect;
