@@ -1,4 +1,4 @@
-import { MousePointerIcon } from '@icons';
+import { DraggingIcon, MousePointerIcon } from '@icons';
 import './collaborator-cursor.scss';
 import { Avatar } from '@core/components/avatar/avatar';
 
@@ -8,6 +8,7 @@ interface Props {
     color: string;
     name: string;
     avatarSrc?: string;
+    isDragging?: boolean;
 }
 export const CollaboratorCursor: React.FC<Props> = ({
     x,
@@ -15,13 +16,14 @@ export const CollaboratorCursor: React.FC<Props> = ({
     color,
     name,
     avatarSrc,
+    isDragging,
 }) => {
     return (
         <div
             className="collaborator-cursor"
             style={{ transform: `translate(${x}px, ${y}px)` }}
         >
-            <MousePointerIcon className="collaborator-cursor__pointer" size={16} />
+            {isDragging ? <DraggingIcon className="collaborator-cursor__pointer" size={16} /> : <MousePointerIcon className="collaborator-cursor__pointer" size={16} />}
             <div
                 className="collaborator-cursor__label"
                 style={{ backgroundColor: color }}

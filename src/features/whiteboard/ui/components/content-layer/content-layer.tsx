@@ -7,14 +7,16 @@ interface Props {
   width: number;
   height: number;
   notes: Note[];
+  ghostNoteId: string | null;
 }
 
 export const ContentLayer: React.FC<Props> = ({ 
   width, 
   height, 
-  notes 
+  notes,
+  ghostNoteId,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  usePaintNotes({ canvasRef, width, height, notes });
+  usePaintNotes({ canvasRef, width, height, notes, ghostNoteId });
   return <canvas ref={canvasRef} className="content-layer" />;
 };
