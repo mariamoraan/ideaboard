@@ -18,29 +18,43 @@ export const usePaintGhostNote = ({
 }) => {
 
     const prevBoundsRef = useRef<Rect | null>(null);
+    const pendingNoteRef = useRef<Note | null>(null);
+    const rafIdRef = useRef<number | null>(null);
 
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = setupCanvas(canvas, width, height);
-        if(!ctx) return;
+        pendingNoteRef.current = ghostNote;
+        if (rafIdRef.current !== null) return;
 
-        if(!ghostNote) {
-            const prev = prevBoundsRef.current;
-            if(prev) {
-                ctx.clearRect(prev.x, prev.y, prev.width, prev.height);
+        rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = null;
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = setupCanvas(canvas, width, height);
+            if (!ctx) return;
+
+            const note = pendingNoteRef.current;
+
+            if (!note) {
+                const prev = prevBoundsRef.current;
+                if (prev) ctx.clearRect(prev.x, prev.y, prev.width, prev.height);
+                prevBoundsRef.current = null;
+                return;
             }
-            prevBoundsRef.current = null;
-            return;
-        }
 
-        const next = noteBounds(ghostNote);
-        const dirty = prevBoundsRef?.current ? unionRects(prevBoundsRef.current, next) : next;
+            const next = noteBounds(note);
+            const dirty = prevBoundsRef.current ? unionRects(prevBoundsRef.current, next) : next;
+            ctx.clearRect(dirty.x, dirty.y, dirty.width, dirty.height);
+            paintNote(ctx, note);
+            prevBoundsRef.current = next;
+        });
 
-        ctx.clearRect(dirty.x, dirty.y, dirty.width, dirty.height);
-        paintNote(ctx, ghostNote);
-        prevBoundsRef.current = next;
+        return () => {
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
+        };
 
-    }, [canvasRef, width, height, ghostNote]);
+    }, [ghostNote, width, height]);
 }
